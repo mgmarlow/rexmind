@@ -126,24 +126,24 @@ func ListBlocks(c Caller, sessionID string) ([]Block, error) {
 	return res.Blocks, err
 }
 
-// Process reports a terminal's root program.
+// Process is a running program.
 type Process struct {
-	Child *struct {
-		PID int `json:"pid"`
-	} `json:"child"`
+	PID  int    `json:"pid"`
+	Name string `json:"name"`
 }
 
-// RootPID returns the PID of the program a terminal block was started with,
-// or 0 if it has exited.
-func RootPID(c Caller, sessionID, blockID string) (int, error) {
-	var p Process
-	if err := blockMethod(c, sessionID, blockID, "process", &p); err != nil {
-		return 0, err
+// RootProcess returns the program a terminal block was started with.
+func RootProcess(c Caller, sessionID, blockID string) (Process, error) {
+	var res struct {
+		Child *Process `json:"child"`
 	}
-	if p.Child == nil {
-		return 0, nil
+	if err := blockMethod(c, sessionID, blockID, "process", &res); err != nil {
+		return Process{}, err
 	}
-	return p.Child.PID, nil
+	if res.Child == nil {
+		return Process{}, fmt.Errorf("block %s has no running program", blockID)
+	}
+	return *res.Child, nil
 }
 
 // StatusRecord is one OSC 7501 program status record.

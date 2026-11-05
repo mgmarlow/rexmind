@@ -23,7 +23,10 @@ Usage:
   rexmind stop    [-f Procfile] [name...]   stop processes, keeping their blocks
   rexmind status  [-f Procfile]             show each process's state
   rexmind connect [-f Procfile] name        show a process in the Rex app
-  rexmind kill    [-f Procfile] [-t 5s]     stop everything and close the session
+  rexmind kill    [-f Procfile]             stop everything and close the session
+
+-t sets how long a process gets after SIGTERM before SIGKILL. It is fixed at
+start and applies to every later stop, restart and kill.
 `
 
 func main() {
@@ -41,7 +44,6 @@ func run(name string, args []string) error {
 	fs := flag.NewFlagSet(name, flag.ExitOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	procfile := fs.String("f", "", "Procfile path (default Procfile.dev, then Procfile)")
-	stopTimeout := fs.Duration("t", 5*time.Second, "time to wait after SIGTERM before SIGKILL")
 	c := rex.CLI{}
 
 	if name == "_exec" {
@@ -50,7 +52,9 @@ func run(name string, args []string) error {
 
 	var only *string
 	var portBase, portStep *int
+	var stopTimeout *time.Duration
 	if name == "start" {
+		stopTimeout = fs.Duration("t", 5*time.Second, "time a process gets after SIGTERM before SIGKILL")
 		only = fs.String("l", "", "comma-separated processes to run (default all)")
 		portBase = fs.Int("p", 5000, "first PORT")
 		portStep = fs.Int("P", 100, "PORT step between processes")
@@ -84,7 +88,7 @@ func run(name string, args []string) error {
 		}
 		return cmd.Connect(c, p, fs.Arg(0))
 	case "kill":
-		return cmd.Kill(c, p, *stopTimeout)
+		return cmd.Kill(c, p)
 	}
 	fs.Usage()
 	os.Exit(2)

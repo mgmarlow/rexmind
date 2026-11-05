@@ -67,6 +67,9 @@ func Run(cfg Config, sig <-chan os.Signal) error {
 		}
 		select {
 		case code := <-done:
+			// Background jobs the process left behind would otherwise run on
+			// untracked, and a restart would start a second copy.
+			stopGroup(c.cmd.Process.Pid, time.After(cfg.StopTimeout))
 			cfg.Report(exitState(code), fmt.Sprintf("exited %d", code))
 			c = nil
 		case s := <-sig:
@@ -111,22 +114,51 @@ func start(cfg Config) (*child, error) {
 	return c, nil
 }
 
-// stop sends SIGTERM to the child's process group, then SIGKILL if it is
-// still alive after StopTimeout. A nil child is already stopped.
+// stop stops the child and everything in its process group. A nil child is
+// already stopped.
 func stop(cfg Config, c *child) {
 	if c == nil {
 		return
 	}
-	pgid := -c.cmd.Process.Pid
-	syscall.Kill(pgid, syscall.SIGTERM)
+	pgid := c.cmd.Process.Pid
+	deadline := time.After(cfg.StopTimeout)
+	syscall.Kill(-pgid, syscall.SIGTERM)
 	select {
 	case <-c.done:
-	case <-time.After(cfg.StopTimeout):
-		syscall.Kill(pgid, syscall.SIGKILL)
+	case <-deadline:
+		syscall.Kill(-pgid, syscall.SIGKILL)
 		<-c.done
+		return
 	}
-	// Grandchildren that ignored SIGTERM must not outlive the process.
-	syscall.Kill(pgid, syscall.SIGKILL)
+	awaitGroup(pgid, deadline)
+}
+
+// stopGroup sends SIGTERM to what remains of a process group whose leader
+// has exited, then waits for it like awaitGroup.
+func stopGroup(pgid int, deadline <-chan time.Time) {
+	if syscall.Kill(-pgid, syscall.SIGTERM) == nil {
+		awaitGroup(pgid, deadline)
+	}
+}
+
+// awaitGroup gives a signalled process group's members until deadline to
+// exit, then sends SIGKILL. A group outlives its leader while any member
+// lives, and its ID isn't reused until then, so signalling it after the
+// leader has been reaped is safe.
+func awaitGroup(pgid int, deadline <-chan time.Time) {
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-deadline:
+			syscall.Kill(-pgid, syscall.SIGKILL)
+			return
+		case <-tick.C:
+			if syscall.Kill(-pgid, 0) != nil {
+				return
+			}
+		}
+	}
 }
 
 func exitCode(ps *os.ProcessState) int {

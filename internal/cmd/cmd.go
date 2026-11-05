@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"text/tabwriter"
@@ -78,9 +79,12 @@ func Start(c rex.Caller, p project.Project, o StartOpts, out io.Writer) error {
 	defer signal.Stop(interrupt)
 	for {
 		select {
-		case <-interrupt:
+		case s := <-interrupt:
+			if s == syscall.SIGHUP {
+				return nil // the terminal closed; processes keep running
+			}
 			fmt.Fprintln(out, "stopping…")
-			return Kill(c, p, o.StopTimeout)
+			return Kill(c, p)
 		case <-time.After(2 * time.Second):
 			if id, err := rex.ResolveSession(c, p.SessionLabel()); err == nil && id != sessionID {
 				fmt.Fprintln(out, "session closed")
@@ -109,28 +113,40 @@ func execArgv(exe, root string, s spec.Spec, stop time.Duration) []string {
 		"-root", root,
 		"-port", strconv.Itoa(s.Port),
 		"-stop-timeout", stop.String(),
-		s.Name, "--", "sh", "-c", s.Cmd,
+		"--", s.Name, "--", "sh", "-c", s.Cmd,
 	}
 }
 
-// Kill asks every wrapper to stop its process, waits for the blocks to
-// close, then destroys the session.
-func Kill(c rex.Caller, p project.Project, stopTimeout time.Duration) error {
+// Kill asks every wrapper to stop its process, waits for the wrappers to
+// exit, then destroys the session. Each wrapper enforces the stop timeout
+// given to `start`, so the wait is bounded by that, not by Kill.
+func Kill(c rex.Caller, p project.Project) error {
 	r, err := p.Find(c)
 	if err != nil {
 		return err
 	}
 	defer os.Remove(envsnap.Path(p.Root))
-	if err := signalBlocks(c, r.SessionID, r.Blocks, syscall.SIGTERM); err != nil {
+
+	exe, err := os.Executable()
+	if err != nil {
 		return err
 	}
-	deadline := time.Now().Add(stopTimeout + 2*time.Second)
-	for time.Now().Before(deadline) {
-		blocks, err := rex.ListBlocks(c, r.SessionID)
-		if err != nil || len(blocks) == 0 {
-			break
+	var wrappers []int
+	for _, b := range r.Blocks {
+		proc, err := rex.RootProcess(c, r.SessionID, b.ID)
+		// Other blocks in the session, such as a shell the user opened,
+		// may ignore SIGTERM; destroying the session hangs them up instead.
+		if err != nil || proc.Name != filepath.Base(exe) {
+			continue
 		}
-		time.Sleep(100 * time.Millisecond)
+		if syscall.Kill(proc.PID, syscall.SIGTERM) == nil {
+			wrappers = append(wrappers, proc.PID)
+		}
+	}
+	for _, pid := range wrappers {
+		for syscall.Kill(pid, 0) == nil {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 	// The session may already be gone once its last block closed.
 	if id, err := rex.ResolveSession(c, p.SessionLabel()); err != nil || id == "" {
@@ -155,9 +171,9 @@ func Signal(c rex.Caller, p project.Project, names []string, sig syscall.Signal)
 func signalBlocks(c rex.Caller, sessionID string, blocks []rex.Block, sig syscall.Signal) error {
 	var errs []error
 	for _, b := range blocks {
-		pid, err := rex.RootPID(c, sessionID, b.ID)
-		if err == nil && pid > 0 {
-			err = syscall.Kill(pid, sig)
+		proc, err := rex.RootProcess(c, sessionID, b.ID)
+		if err == nil {
+			err = syscall.Kill(proc.PID, sig)
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", b.Label, err))

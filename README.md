@@ -47,7 +47,7 @@ Each block's program is `rexmind _exec`, a small wrapper that runs the real comm
 | `SIGUSR1` | stop the process; the block stays |
 | `SIGHUP`, `SIGTERM`, `SIGINT` | stop the process and exit, closing the block |
 
-Stopping sends `SIGTERM` to the process group, then `SIGKILL` after `-t` (default 5s). Rex sends `SIGHUP` when a block or session closes, so hangup always means shutdown.
+Stopping sends `SIGTERM` to the process group, then `SIGKILL` to any members still running after `-t` (default 5s). `-t` is given to `start` and applies to every later stop, restart and kill. When a process exits on its own, background jobs it left in its group are stopped the same way. Rex sends `SIGHUP` when a block or session closes, so hangup always means shutdown.
 
 The wrapper reports state with OSC 7501 program status sequences, which Rex shows natively and `rexmind status` reads back.
 

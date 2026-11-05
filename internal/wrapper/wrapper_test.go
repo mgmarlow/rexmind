@@ -86,6 +86,47 @@ func TestReportsExitStatusAndStaysUp(t *testing.T) {
 	h.shutdown()
 }
 
+// waitFor polls until path exists.
+func waitFor(t *testing.T, path string) {
+	t.Helper()
+	for i := 0; i < 200; i++ {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("%s never appeared", path)
+}
+
+func TestStopGivesGroupMembersTheGracePeriod(t *testing.T) {
+	dir := t.TempDir()
+	ready, cleaned := filepath.Join(dir, "ready"), filepath.Join(dir, "cleaned")
+	worker := `trap "sleep 0.2; touch ` + cleaned + `; exit 0" TERM; touch ` + ready + `; while :; do sleep 0.05; done`
+	h := run(t, 2*time.Second, "sh", "-c", "sh -c '"+worker+"' & wait")
+	h.next()
+	waitFor(t, ready)
+
+	h.shutdown()
+	if _, err := os.Stat(cleaned); err != nil {
+		t.Fatal("worker was killed before finishing its cleanup")
+	}
+}
+
+func TestExitStopsLeftoverBackgroundJobs(t *testing.T) {
+	pidfile := filepath.Join(t.TempDir(), "pid")
+	h := run(t, time.Second, "sh", "-c", "sleep 300 & echo $! > "+pidfile)
+	h.next()
+	if r := h.next(); r.state != Exited {
+		t.Fatalf("got %+v", r)
+	}
+	data, _ := os.ReadFile(pidfile)
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+	if pid == 0 || syscall.Kill(pid, 0) == nil {
+		t.Fatalf("background job %d still alive", pid)
+	}
+	h.shutdown()
+}
+
 func TestStopEscalatesToKill(t *testing.T) {
 	ready := filepath.Join(t.TempDir(), "ready")
 	h := run(t, 100*time.Millisecond, "sh", "-c", "trap '' TERM; touch "+ready+"; while :; do sleep 0.05; done")
