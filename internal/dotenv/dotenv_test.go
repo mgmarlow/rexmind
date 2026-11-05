@@ -3,45 +3,49 @@ package dotenv
 import (
 	"os"
 	"path/filepath"
-	"reflect"
-	"strings"
 	"testing"
 )
 
-func TestParse(t *testing.T) {
-	src := `
-# comment
-PLAIN=value
-export EXPORTED=yes
-SINGLE='a $literal'
-DOUBLE="line1\nline2"
-TRAILING=x # note
-`
-	got, err := Parse(strings.NewReader(src))
-	if err != nil {
-		t.Fatal(err)
+func TestLoadMergesInOvermindOrder(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	os.WriteFile(filepath.Join(dir, ".overmind.env"), []byte("A=overmind\nB=overmind\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("B=dotenv\nKEY=\"multi\nline\"\n"), 0o600)
+
+	env, warnings := Load(dir)
+	if len(warnings) != 0 {
+		t.Fatal(warnings)
 	}
-	want := map[string]string{
-		"PLAIN":    "value",
-		"EXPORTED": "yes",
-		"SINGLE":   "a $literal",
-		"DOUBLE":   "line1\nline2",
-		"TRAILING": "x",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %q, want %q", got, want)
+	want := map[string]string{"A": "overmind", "B": "dotenv", "KEY": "multi\nline"}
+	for k, v := range want {
+		if env[k] != v {
+			t.Errorf("%s = %q, want %q", k, env[k], v)
+		}
 	}
 }
 
-func TestLoadLaterFilesOverride(t *testing.T) {
+func TestLoadSkipsUnparsableFile(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env"), []byte("A=1\nB=1\n"), 0o600)
-	os.WriteFile(filepath.Join(dir, ".overmind.env"), []byte("B=2\n"), 0o600)
-	got, err := Load(dir)
-	if err != nil {
-		t.Fatal(err)
+	t.Setenv("HOME", t.TempDir())
+	os.WriteFile(filepath.Join(dir, ".overmind.env"), []byte("A=1\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("not an assignment\n"), 0o600)
+
+	env, warnings := Load(dir)
+	if len(warnings) != 1 || env["A"] != "1" {
+		t.Fatalf("env = %v, warnings = %v", env, warnings)
 	}
-	if want := map[string]string{"A": "1", "B": "2"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
+}
+
+func TestFilesHonorsOvermindEnvVars(t *testing.T) {
+	vars := map[string]string{"OVERMIND_SKIP_ENV": "1", "OVERMIND_ENV": "a.env,/abs/b.env"}
+	getenv := func(k string) (string, bool) { v, ok := vars[k]; return v, ok }
+
+	files := Files("/proj", getenv)
+	tail := files[len(files)-3:]
+	want := []string{"/proj/.overmind.env", "/proj/a.env", "/abs/b.env"}
+	for i := range want {
+		if tail[i] != want[i] {
+			t.Fatalf("files = %v, want suffix %v", files, want)
+		}
 	}
 }

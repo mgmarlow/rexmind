@@ -35,7 +35,7 @@ rexmind kill              # stop everything from another terminal
 
 ### Environment
 
-Each process gets the login shell's environment, then `.env`, `.overmind.env` and `.rexmind.env` from the project root (later files win), then `PORT`. `PORT` is `-p` (default 5000) plus `-P` (default 100) times the process's position in the Procfile, so `-l` does not shift ports.
+Env files load as overmind loads them, with the same parser: `~/.overmind.env`, `.overmind.env`, `.env` (skipped if `OVERMIND_SKIP_ENV` is set), then each file in `OVERMIND_ENV`. Later files win, and a file that fails to parse is skipped with a warning. Each process gets the login shell's environment, then those files, then `PORT`. `PORT` is `-p` (default 5000) plus `-P` (default 100) times the process's position in the Procfile, so `-l` does not shift ports.
 
 ## How it works
 

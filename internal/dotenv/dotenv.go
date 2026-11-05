@@ -1,74 +1,58 @@
-// Package dotenv reads .env-style KEY=VALUE files.
+// Package dotenv loads env files the way overmind does, with the same parser,
+// so a project's existing files work unchanged.
 package dotenv
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Envek/godotenv"
 )
 
-// Files are loaded in order; later files override earlier ones.
-var Files = []string{".env", ".overmind.env", ".rexmind.env"}
-
-// Parse reads KEY=VALUE lines. It accepts an optional `export ` prefix,
-// # comments, and single- or double-quoted values (double quotes expand \n).
-func Parse(r io.Reader) (map[string]string, error) {
-	env := map[string]string{}
-	sc := bufio.NewScanner(r)
-	for n := 1; sc.Scan(); n++ {
-		text := strings.TrimSpace(sc.Text())
-		if text == "" || strings.HasPrefix(text, "#") {
+// Files lists the env files for a project rooted at dir, in load order.
+// Later files override earlier ones, matching overmind: ~/.overmind.env,
+// .overmind.env, .env (unless OVERMIND_SKIP_ENV is set), then each file in
+// the comma-separated OVERMIND_ENV.
+func Files(dir string, getenv func(string) (string, bool)) []string {
+	var files []string
+	if home, err := os.UserHomeDir(); err == nil {
+		files = append(files, filepath.Join(home, ".overmind.env"))
+	}
+	files = append(files, filepath.Join(dir, ".overmind.env"))
+	if _, skip := getenv("OVERMIND_SKIP_ENV"); !skip {
+		files = append(files, filepath.Join(dir, ".env"))
+	}
+	extra, _ := getenv("OVERMIND_ENV")
+	for _, f := range strings.Split(extra, ",") {
+		if f == "" {
 			continue
 		}
-		key, val, ok := strings.Cut(strings.TrimPrefix(text, "export "), "=")
-		key = strings.TrimSpace(key)
-		if !ok || key == "" {
-			return nil, fmt.Errorf("line %d: expected KEY=VALUE", n)
+		if !filepath.IsAbs(f) {
+			f = filepath.Join(dir, f)
 		}
-		env[key] = unquote(strings.TrimSpace(val))
+		files = append(files, f)
 	}
-	return env, sc.Err()
+	return files
 }
 
-func unquote(v string) string {
-	if len(v) >= 2 {
-		switch q := v[0]; {
-		case q == '\'' && v[len(v)-1] == q:
-			return v[1 : len(v)-1]
-		case q == '"' && v[len(v)-1] == q:
-			return strings.NewReplacer(`\n`, "\n", `\"`, `"`, `\\`, `\`).Replace(v[1 : len(v)-1])
+// Load merges the project's env files. A file that fails to parse is skipped
+// and reported in warnings rather than stopping the load, as overmind does.
+func Load(dir string) (env map[string]string, warnings []error) {
+	env = map[string]string{}
+	for _, file := range Files(dir, os.LookupEnv) {
+		vars, err := godotenv.Read(file)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+		case err != nil:
+			warnings = append(warnings, fmt.Errorf("skipping %s: %w", file, err))
+		default:
+			maps.Copy(env, vars)
 		}
 	}
-	if i := strings.Index(v, " #"); i >= 0 {
-		return strings.TrimSpace(v[:i])
-	}
-	return v
-}
-
-// Load merges every file in Files that exists under dir.
-func Load(dir string) (map[string]string, error) {
-	merged := map[string]string{}
-	for _, name := range Files {
-		f, err := os.Open(filepath.Join(dir, name))
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		env, err := Parse(f)
-		f.Close()
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
-		}
-		for k, v := range env {
-			merged[k] = v
-		}
-	}
-	return merged, nil
+	return env, warnings
 }

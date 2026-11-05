@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/mgmarlow/rexmind/internal/dotenv"
 	"github.com/mgmarlow/rexmind/internal/layout"
 	"github.com/mgmarlow/rexmind/internal/procfile"
 	"github.com/mgmarlow/rexmind/internal/project"
@@ -37,6 +38,11 @@ func Start(c rex.Caller, p project.Project, o StartOpts, out io.Writer) error {
 	specs, err := loadSpecs(p, o.Spec)
 	if err != nil {
 		return err
+	}
+	if _, warnings := dotenv.Load(p.Root); len(warnings) > 0 {
+		for _, w := range warnings {
+			fmt.Fprintf(out, "warning: %v\n", w)
+		}
 	}
 	exe, err := os.Executable()
 	if err != nil {

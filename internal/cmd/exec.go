@@ -26,9 +26,9 @@ type ExecOpts struct {
 
 // Exec supervises one process. It is the root program of each block.
 func Exec(o ExecOpts) error {
-	fileEnv, err := dotenv.Load(o.Root)
-	if err != nil {
-		return err
+	fileEnv, warnings := dotenv.Load(o.Root)
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "\x1b[33m[rexmind] %v\x1b[0m\r\n", w)
 	}
 	env := mergeEnv(os.Environ(), fileEnv, map[string]string{"PORT": strconv.Itoa(o.Port)})
 
