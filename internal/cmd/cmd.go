@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mgmarlow/rexmind/internal/dotenv"
+	"github.com/mgmarlow/rexmind/internal/envsnap"
 	"github.com/mgmarlow/rexmind/internal/layout"
 	"github.com/mgmarlow/rexmind/internal/procfile"
 	"github.com/mgmarlow/rexmind/internal/project"
@@ -39,10 +40,12 @@ func Start(c rex.Caller, p project.Project, o StartOpts, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if _, warnings := dotenv.Load(p.Root); len(warnings) > 0 {
-		for _, w := range warnings {
-			fmt.Fprintf(out, "warning: %v\n", w)
-		}
+	_, warnings := dotenv.Load(p.Root, os.LookupEnv)
+	for _, w := range warnings {
+		fmt.Fprintf(out, "warning: %v\n", w)
+	}
+	if err := envsnap.Save(envsnap.Path(p.Root), os.Environ()); err != nil {
+		return err
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -58,6 +61,7 @@ func Start(c rex.Caller, p project.Project, o StartOpts, out io.Writer) error {
 	}
 	sessionID, _, err := rex.CreateSession(c, p.SessionLabel(), "procs", layout.Tile(blocks))
 	if err != nil {
+		os.Remove(envsnap.Path(p.Root))
 		return err
 	}
 
@@ -116,6 +120,7 @@ func Kill(c rex.Caller, p project.Project, stopTimeout time.Duration) error {
 	if err != nil {
 		return err
 	}
+	defer os.Remove(envsnap.Path(p.Root))
 	if err := signalBlocks(c, r.SessionID, r.Blocks, syscall.SIGTERM); err != nil {
 		return err
 	}

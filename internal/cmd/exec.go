@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mgmarlow/rexmind/internal/dotenv"
+	"github.com/mgmarlow/rexmind/internal/envsnap"
 	"github.com/mgmarlow/rexmind/internal/wrapper"
 )
 
@@ -26,11 +27,19 @@ type ExecOpts struct {
 
 // Exec supervises one process. It is the root program of each block.
 func Exec(o ExecOpts) error {
-	fileEnv, warnings := dotenv.Load(o.Root)
-	for _, w := range warnings {
-		fmt.Fprintf(os.Stderr, "\x1b[33m[rexmind] %v\x1b[0m\r\n", w)
+	warn := func(err error) { fmt.Fprintf(os.Stderr, "\x1b[33m[rexmind] %v\x1b[0m\r\n", err) }
+
+	base := os.Environ()
+	if snapshot, err := envsnap.Load(envsnap.Path(o.Root)); err == nil {
+		base = envsnap.Merge(snapshot, base)
+	} else {
+		warn(fmt.Errorf("using the block's login environment: %w", err))
 	}
-	env := mergeEnv(os.Environ(), fileEnv, map[string]string{"PORT": strconv.Itoa(o.Port)})
+	fileEnv, warnings := dotenv.Load(o.Root, lookup(base))
+	for _, w := range warnings {
+		warn(w)
+	}
+	env := mergeEnv(base, fileEnv, map[string]string{"PORT": strconv.Itoa(o.Port)})
 
 	// A restarted child takes the terminal's foreground from the background,
 	// which would otherwise stop it with SIGTTOU.
@@ -70,6 +79,18 @@ func mergeEnv(base []string, layers ...map[string]string) []string {
 		out = append(out, k+"="+m[k])
 	}
 	return out
+}
+
+// lookup returns an os.LookupEnv-style function over a KEY=VALUE list.
+func lookup(env []string) func(string) (string, bool) {
+	return func(key string) (string, bool) {
+		for i := len(env) - 1; i >= 0; i-- {
+			if k, v, ok := cutEnv(env[i]); ok && k == key {
+				return v, true
+			}
+		}
+		return "", false
+	}
 }
 
 func cutEnv(kv string) (string, string, bool) {

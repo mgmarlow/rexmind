@@ -12,7 +12,7 @@ func TestLoadMergesInOvermindOrder(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ".overmind.env"), []byte("A=overmind\nB=overmind\n"), 0o600)
 	os.WriteFile(filepath.Join(dir, ".env"), []byte("B=dotenv\nKEY=\"multi\nline\"\n"), 0o600)
 
-	env, warnings := Load(dir)
+	env, warnings := Load(dir, os.LookupEnv)
 	if len(warnings) != 0 {
 		t.Fatal(warnings)
 	}
@@ -30,7 +30,7 @@ func TestLoadSkipsUnparsableFile(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ".overmind.env"), []byte("A=1\n"), 0o600)
 	os.WriteFile(filepath.Join(dir, ".env"), []byte("not an assignment\n"), 0o600)
 
-	env, warnings := Load(dir)
+	env, warnings := Load(dir, os.LookupEnv)
 	if len(warnings) != 1 || env["A"] != "1" {
 		t.Fatalf("env = %v, warnings = %v", env, warnings)
 	}

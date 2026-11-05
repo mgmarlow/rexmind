@@ -42,9 +42,10 @@ func Files(dir string, getenv func(string) (string, bool)) []string {
 
 // Load merges the project's env files. A file that fails to parse is skipped
 // and reported in warnings rather than stopping the load, as overmind does.
-func Load(dir string) (env map[string]string, warnings []error) {
+// getenv supplies OVERMIND_SKIP_ENV and OVERMIND_ENV.
+func Load(dir string, getenv func(string) (string, bool)) (env map[string]string, warnings []error) {
 	env = map[string]string{}
-	for _, file := range Files(dir, os.LookupEnv) {
+	for _, file := range Files(dir, getenv) {
 		vars, err := godotenv.Read(file)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
