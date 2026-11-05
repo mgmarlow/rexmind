@@ -1,0 +1,3 @@
+# Sample processes for trying rexmind
+web: python3 -m http.server $PORT
+ticker: while true; do echo "$GREETING $(date +%T)"; sleep 1; done
