@@ -20,10 +20,12 @@ type Opts struct {
 	Only     []string // empty means every process
 	PortBase int
 	PortStep int
+	NoPort   bool // leave PORT unset, so env files or the shell decide it
 }
 
 // Build assigns each process PortBase + i*PortStep by its Procfile position,
-// so a filtered run gives a process the same port as a full one.
+// so a filtered run gives a process the same port as a full one. With
+// NoPort, every Port is 0, meaning PORT is not set.
 func Build(procs []procfile.Proc, o Opts) ([]Spec, error) {
 	names := make([]string, len(procs))
 	for i, p := range procs {
@@ -39,7 +41,11 @@ func Build(procs []procfile.Proc, o Opts) ([]Spec, error) {
 		if len(o.Only) > 0 && !slices.Contains(o.Only, p.Name) {
 			continue
 		}
-		specs = append(specs, Spec{Name: p.Name, Cmd: p.Cmd, Port: o.PortBase + i*o.PortStep})
+		port := o.PortBase + i*o.PortStep
+		if o.NoPort {
+			port = 0
+		}
+		specs = append(specs, Spec{Name: p.Name, Cmd: p.Cmd, Port: port})
 	}
 	return specs, nil
 }

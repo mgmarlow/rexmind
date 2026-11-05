@@ -69,7 +69,11 @@ func Start(c rex.Caller, p project.Project, o StartOpts, out io.Writer) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(tw, "started %s\n", p.SessionLabel())
 	for _, s := range specs {
-		fmt.Fprintf(tw, "  %s\tPORT=%d\t%s\n", s.Name, s.Port, s.Cmd)
+		port := "PORT unset"
+		if s.Port != 0 {
+			port = fmt.Sprintf("PORT=%d", s.Port)
+		}
+		fmt.Fprintf(tw, "  %s\t%s\t%s\n", s.Name, port, s.Cmd)
 	}
 	fmt.Fprintln(tw, "Ctrl-C stops everything · rexmind connect <name> to view a process")
 	tw.Flush()

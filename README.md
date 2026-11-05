@@ -35,7 +35,9 @@ rexmind kill              # stop everything from another terminal
 
 ### Environment
 
-Env files load as overmind loads them, with the same parser: `~/.overmind.env`, `.overmind.env`, `.env` (skipped if `OVERMIND_SKIP_ENV` is set), then each file in `OVERMIND_ENV`. Later files win, and a file that fails to parse is skipped with a warning. Each process gets the environment `rexmind start` ran with, then those files, then `PORT`, as with overmind. Rex starts blocks with a login-shell environment that skips `~/.zshrc`, where tools like asdf, nvm and pnpm often set `PATH`. So `start` saves its environment to a per-user temp file (mode 0600, removed by `kill`) for each block's wrapper to load. Rex's per-block variables (`REX_*`, `TERM`) still come from the block. `PORT` is `-p` (default 5000) plus `-P` (default 100) times the process's position in the Procfile, so `-l` does not shift ports.
+Env files load as overmind loads them, with the same parser: `~/.overmind.env`, `.overmind.env`, `.env` (skipped if `OVERMIND_SKIP_ENV` is set), then each file in `OVERMIND_ENV`. Later files win, and a file that fails to parse is skipped with a warning. Each process gets the environment `rexmind start` ran with, then those files, then `PORT`, as with overmind. Rex starts blocks with a login-shell environment that skips `~/.zshrc`, where tools like asdf, nvm and pnpm often set `PATH`. So `start` saves its environment to a per-user temp file (mode 0600, removed by `kill`) for each block's wrapper to load. Rex's per-block variables (`REX_*`, `TERM`) still come from the block. `PORT` is `-p` (default 5000) plus `-P` (default 100) times the process's position in the Procfile, so `-l` does not shift ports. `-N` leaves `PORT` unset, so a value from the env files or shell applies.
+
+As with overmind, `start`'s flags default from `OVERMIND_*` settings in the shell or the env files: `OVERMIND_PROCFILE`, `OVERMIND_PROCESSES`, `OVERMIND_PORT`, `OVERMIND_PORT_STEP`, `OVERMIND_NO_PORT` and `OVERMIND_TIMEOUT` (seconds). A project's existing `.overmind.env` configures rexmind the same way.
 
 ## How it works
 

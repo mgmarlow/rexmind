@@ -28,6 +28,9 @@ func TestBuildFilterKeepsPorts(t *testing.T) {
 	if want := []Spec{{"css", "c", 5200}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
+	if got, _ := Build(procs, Opts{PortBase: 5000, PortStep: 100, NoPort: true}); got[1].Port != 0 {
+		t.Fatalf("NoPort gave port %d, want 0", got[1].Port)
+	}
 	if _, err := Build(procs, Opts{Only: []string{"nope"}}); err == nil {
 		t.Fatal("want error for unknown process")
 	}

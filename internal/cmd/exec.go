@@ -39,7 +39,11 @@ func Exec(o ExecOpts) error {
 	for _, w := range warnings {
 		warn(w)
 	}
-	env := mergeEnv(base, fileEnv, map[string]string{"PORT": strconv.Itoa(o.Port)})
+	port := map[string]string{}
+	if o.Port != 0 {
+		port["PORT"] = strconv.Itoa(o.Port)
+	}
+	env := mergeEnv(base, fileEnv, port)
 
 	// A restarted child takes the terminal's foreground from the background,
 	// which would otherwise stop it with SIGTTOU.
